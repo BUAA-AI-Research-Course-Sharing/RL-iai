@@ -180,42 +180,40 @@ def p_state_reward(state, action):
     # 0: up, 1: down, 2: left, 3: right
     directions = (-21, 21, -1, 1)
 
-    next_state = state + directions[action]
+    next_state = state + directions[int(action)]
     if next_state < 0 or next_state >= 441 or \
        grid[next_state] == u'air':
         next_state = state
     
-    return ((1.0, next_state, rewards[state]), ) 
+    return 1.0, next_state, rewards[state]
 
 # 策略评估：计算策略下状态的价值
 def compute_value_function(policy, gamma):
     ##  设置阈值
-    theta = 0.5
+    theta = 0.05
 
     # 初始化每个状态的价值
     # 创建每次迭代更新的状态价值表
-    V = np.zeros_like(states)
+    V = np.zeros_like(states, dtype=np.float32)
     
     while True:
         delta = 0
         ## 遍历所有状态
         for i, state in enumerate(states):
-            if state is end:
+            if state == end:
                 continue
 
             ## 选择当前策略下当前状态所对应的动作
             action = policy[i]
 
             ## 返回当前状态下执行动作得到的转移概率、下一状态和奖励
-            probs_states_rewards = \
+            _, next_state, reward = \
                 p_state_reward(state, action)
             
             ## 计算策略下状态价值
-            v = V[state]
-            V[state] = 0
-            for prob, next_state, reward in probs_states_rewards:
-                V[state] += prob * (reward + gamma * V[next_state])
-            delta = max(delta, abs(v - V[state]))
+            v = V[i]
+            V[i] = reward + gamma * V[states.index(next_state)]
+            delta = max(delta, abs(v - V[i]))
         ## 价值表前后两次更新之差小于阈值时停止循环
         if delta < theta:
             break
@@ -228,23 +226,22 @@ def next_best_policy(value_table, gamma):
     ## 创建空数组保存改进的策略
     next_policy = np.zeros_like(states)
     
+    ## 创建列表存储当前状态下执行不同动作的价值
+    action_values = np.zeros_like(actions, dtype=np.float32)
+        
     for i, state in enumerate(states):
-        if state is end:
+        if state == end:
             continue
 
-        ## 创建列表存储当前状态下执行不同动作的价值
-        action_values = np.zeros_like(actions)
-        
         ## 遍历所有动作
         for action in actions:
             ## 返回当前状态-动作下一步的状态、转移概率和奖励
-            probs_states_rewards = \
+            _, next_state, reward = \
                 p_state_reward(state, action)
             
             ## 计算当前状态下执行当前动作的价值
-            for prob, next_state, reward in probs_states_rewards:
-                action_values[action] += \
-                    prob * (reward + gamma * value_table[states.index(next_state)])
+            action_values[action] = \
+                reward + gamma * value_table[states.index(next_state)]
         
         ## 策略提升：选取动作值最大的动作更新策略
         next_policy[i] = np.argmax(action_values)
@@ -257,7 +254,7 @@ def policy_iteration(random_policy, gamma, n):
     policy = random_policy.copy()
     
     ## 进行迭代
-    for iter in range(i, n + 1):
+    for iter in range(1, n + 1):
         ## 策略评估：得到各状态的价值
         V = compute_value_function(policy, gamma)
 
@@ -265,14 +262,14 @@ def policy_iteration(random_policy, gamma, n):
         new_policy = next_best_policy(V, gamma)
         
         ## 对当前策略进行判断
-        if new_policy == policy:    # policy is stable
+        if (new_policy == policy).all():    # policy is stable
             print('[info] early stop.') # TODO: 
             break
 
         ## 替换为当前最佳策略
         policy = new_policy
 
-        if iter % 100:
+        if iter % 100 == 0:
             print('[info] iter {}/{} | {:.2f}'.format(iter, n, iter/n)) # TODO: 
 
     #Fill and submit this code
@@ -335,8 +332,8 @@ for i in range(num_repeats):
     grid = load_grid(world_state)
     s=['emerald_block','diamond_block','redstone_block']
     counter=0
-    for i in grid:
-        if i in s:
+    for j in grid:
+        if j in s:
             states.append(counter)
         counter +=1
     print(counter)
@@ -366,9 +363,9 @@ for i in range(num_repeats):
     print('best_route：',best_route)
 
     action_list = extract_action_list_from_path(best_route)
-#     print("Output (start,end)", (i+1), ":", (start,end))
-#     print("Output (path length)", (i+1), ":", len(best_route))
-#     print("Output (actions)", (i+1), ":", action_list)
+    print("Output (start,end)", (i+1), ":", (start,end))
+    print("Output (path length)", (i+1), ":", len(best_route))
+    print("Output (actions)", (i+1), ":", action_list)
     # Loop until mission ends:
     action_index = 0
     while world_state.is_mission_running:
