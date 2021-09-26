@@ -30,7 +30,6 @@ import time
 import json
 import numpy as np
 import random
-from priority_dict import priorityDictionary as PQ
 
 
 # sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # flush print output immediately
@@ -152,54 +151,99 @@ def extract_action_list_from_path(path_list):
     return alist
  # 状态转移函数，需要返回本次动作是否到达终点，本次动作的reward，本次动作后的下一个state
 def Reward_state_action(s, a):
-    # 向上移动
-    if a == 0:
-    # Fill and submit this code
+    # NOTE: 
+    # id-action map = { 0: up, 1: down, 
+    #                   2: left, 3: right }
+    directions = (-21, 21, -1, 1)
+    next_s = s + directions[int(a)]
+    if next_s not in states:
+        next_s = s
 
-    # 向下移动
-    elif a == 1:
-    # Fill and submit this code
-
-    # 向左移动
-    elif a == 2:
-    # Fill and submit this code
-
-    # 向右移动
-    else:
-    # Fill and submit this code
+    return next_s == end, -1, next_s
 
 def epsilon_greedy(qtem, s, epsilon):
     # -------------------------------------
     # epsilon_greedy, 用于采样实现的动作选择
+    action_cnt = len(actions)
+    one_hot = np.eye(action_cnt)[qtem[s]]
+    soft_policy = (epsilon / action_cnt) * np.ones(action_cnt) + \
+                  (1 - epsilon) * one_hot
+    return np.random.choice(actions,
+                            p=soft_policy,
+                            size=1)[0]
     # -------------------------------------
-    return action
 
+def generate_episode(qtem, epsilon):
+    
+    episode = []
+
+    # 随机选择初始位置
+    s = np.random.choice(states, size=1)[0]
+
+    while True:
+        # 基于epsilon-greedy策略选择动作并执行动作
+        a = epsilon_greedy(qtem, s, epsilon)
+        
+        # 行动完成后返回：
+        # - 这次行动是否到达终点
+        # - 这次行动获得的奖励
+        # - 这次行动后到达了哪一个状态
+        terminated, reward, next_s = \
+            Reward_state_action(s, a)
+
+        # 更新实验的轨迹直到得到完整过程（起始位置->终止为止）的序列
+        episode.append((s, a, reward))
+
+        if terminated:
+            break
+        
+        # update current state 
+        s = next_s
+
+    return episode
+    
 # on policy 基于epsilon-greedy策略进行num次实验，每次实验包含一个完整的episode，再根据episode进行策略改进
 def Monte_Carlo(num, epsilon, gamma):
     # -------------------------------------
-    # 定义状态-动作 函数qfunc (Q[s,a])并初始化
-    # 定义Nqfunc统计某次episode中（s,a）出现的次数
-    # 定义一个实验状态-动作函数qtem用于在采样实验中尽行动作的选择
-        # 进行num次循环
-            # 采用epsilon-greedy策略进行第K次episode采样实验
-            # 定义三个数组用于存储第K次episode采样实验的states,actions,reward序列
-            # 随机选择初始位置
-            # 标记是否到达终点
-            # 基于epsilon-greedy策略选择动作并执行动作
-            # 行动完成后返回：
-                # 这次行动是否到达终点
-                # 这次行动后到达了哪一个状态
-                # 这次行动获得的奖励
-            # 更新实验的轨迹直到得到完整过程（起始位置->终止为止）的序列
+    state_cnt = len(states)
+    action_cnt = len(actions)
 
-            # 针对刚才生成的一幕完整的实验episode，进行策略改进
-            # 定义并初始化回报值 g
+    # 定义状态-动作 函数qfunc (Q[s,a])并初始化
+    qfunc = np.zeros((state_cnt, action_cnt))
+
+    # 定义Nqfunc统计某次episode中（s,a）出现的次数
+    Nqfunc = np.zeros_like(qfunc)
+
+    # 定义一个实验状态-动作函数qtem用于在采样实验中尽行动作的选择
+    qtem = np.random.randint(high=action_cnt, 
+                             size=state_cnt,
+                             dtype=int)    
+    
+    
+    # 进行num次循环
+    for _ in range(num):
+        # 采用epsilon-greedy策略进行第K次episode采样实验
+        episode = generate_episode(qtem, epsilon)
+
+        # 针对刚才生成的一幕完整的实验episode，进行策略改进
+        # 定义并初始化回报值 g
+        g = 0.0    
+        # 反向遍历采样到的序列，进行计算
+        for _, s, a, r in enumerate(episode[::-1]):
             # 计算采样序列的起始状态回报值 g
-                # 反向遍历采样到的序列，进行计算
-            # 正向遍历采样到的序列当中的每一个状态-动作对，并更新qfunc
-                # 把新的s-a的回报g和旧的qfunc[s,a]的回报，一起重新计算，求得更新后的 qfunc[s,a]
-                # 需要注意每次计算时都需要更新g，以对应下一个状态
-        # num次循环后得到最终的qfunc
+            g = gamma * g + r
+            
+            Nqfunc[s][a] += 1
+
+            # 把新的s-a的回报g和旧的qfunc[s,a]的回报，一起重新计算，求得更新后的 qfunc[s,a]                
+            qfunc[s][a] = qfunc[s][a] + (g - qfunc[s][a]) / Nqfunc[s][a] 
+            # ? 正向遍历采样到的序列当中的每一个状态-动作对，并更新qfunc
+            # ? 需要注意每次计算时都需要更新g，以对应下一个状态
+
+        # update qtem
+        qtem = np.argmax(qfunc, axis=1)
+        
+    # num次循环后得到最终的qfunc
     # -------------------------------------
     return qfunc
 
@@ -208,7 +252,7 @@ def get_shortest_path(qfunc):
     # -------------------------------------
     # 根据最终得到的qfunc输出最优的路径
     # -------------------------------------
-    return s_path
+    return np.argmax(qfunc, axis=1)
 
 # Create default Malmo objects:
 agent_host = MalmoPython.AgentHost()
@@ -265,12 +309,16 @@ for i in range(num_repeats):
 
     grid = load_grid(world_state)
     start, end = find_start_end(grid)
-    states = []   # 为简化计算可以仅获取迷宫中agent可站立的states
-    actions = []  # 定义actions
-    num =         #定义采样次数
-    epsilon=      #定义epsilon
-    gamma=        #定义gamma
-    q=Monte_Carlo(num, epsilon, gamma)
+    
+    standable_blocks = \
+        set([u'emerald_block', u'diamond_block', u'redstone_block'])
+    # 为简化计算可以仅获取迷宫中agent可站立的states
+    states = [block for block in grid if block in standable_blocks]   
+    actions = range(4)  # 定义actions: up, down, left and right
+    num = 10e3        #定义采样次数
+    epsilon = 0.2     #定义epsilon
+    gamma = 0.8       #定义gamma
+    q = Monte_Carlo(num, epsilon, gamma)
     path = get_shortest_path(q)
     action_list=extract_action_list_from_path(path)
 
