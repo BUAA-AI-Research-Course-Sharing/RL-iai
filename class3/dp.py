@@ -16,7 +16,6 @@ import os
 import sys
 import time
 import json
-from priority_dict import priorityDictionary as PQ
 import numpy as np
 
 
@@ -26,7 +25,6 @@ gamma = 0.9
 # 设置迭代次数
 n = 100000
 
-GRID_SIZE = 441
 
 
 #地图相关参数
@@ -152,7 +150,7 @@ def find_start_end(grid):
         state.append(counter)    
         counter+=1
     
-    return (eb_index, rb_index, air_block, diamond_block)
+    return (eb_index, rb_index,air_block,diamond_block)
 
 #从best_route获得agent的运动具体action（向东南西北）
 def extract_action_list_from_path(path_list):
@@ -177,64 +175,81 @@ def extract_action_list_from_path(path_list):
 
 # 定义状态动作转移，传入当前状态和执行的动作，返回当前状态下执行动作得到的转移概率、下一状态和奖励
 def p_state_reward(state, action):
-    # return((trans_prob,next_state,reward))
+    # return((trans_pro,next_state,reward))
+    # id-action map:
+    # 0: up, 1: down, 2: left, 3: right
+    directions = (-21, 21, -1, 1)
 
+    next_state = state + directions[action]
+    if next_state < 0 or next_state >= 441 or \
+       grid[next_state] == u'air':
+        next_state = state
     
-    # 向上移动
-    if action == 0:
-        #Fill and submit this code
-
-        
-    # 向下移动
-    if action == 1:
-         #Fill and submit this code
-
-        
-    # 向左移动
-    if action == 2:
-         #Fill and submit this code
-        
-
-        
-    # 向右移动
-    if action == 3:
-         #Fill and submit this code
+    return ((1.0, next_state, rewards[state]), ) 
 
 # 策略评估：计算策略下状态的价值
 def compute_value_function(policy, gamma):
-    ## 设置阈值
+    ##  设置阈值
     theta = 0.5
 
     # 初始化每个状态的价值
-    V = np.zeros(GRID_SIZE)
-
     # 创建每次迭代更新的状态价值表
-    # ?
+    V = np.zeros_like(states)
     
-    ## 遍历所有状态
-    for state in range(GRID_SIZE):
-        ## 选择当前策略下当前状态所对应的动作
-        for action in range(4):      # actions = range(4)
-            tarns_prob, next_state, reward = \
+    while True:
+        delta = 0
+        ## 遍历所有状态
+        for i, state in enumerate(states):
+            if state is end:
+                continue
+
+            ## 选择当前策略下当前状态所对应的动作
+            action = policy[i]
+
+            ## 返回当前状态下执行动作得到的转移概率、下一状态和奖励
+            probs_states_rewards = \
                 p_state_reward(state, action)
-                 
-        ## 返回当前状态下执行动作得到的转移概率、下一状态和奖励
-        ## 计算策略下状态价值
-    ## 价值表前后两次更新之差小于阈值时停止循环
+            
+            ## 计算策略下状态价值
+            v = V[state]
+            V[state] = 0
+            for prob, next_state, reward in probs_states_rewards:
+                V[state] += prob * (reward + gamma * V[next_state])
+            delta = max(delta, abs(v - V[state]))
+        ## 价值表前后两次更新之差小于阈值时停止循环
+        if delta < theta:
+            break
     #Fill and submit this code
-    return value_table
+    return V
 
 
 # 策略提升：更新策略
 def next_best_policy(value_table, gamma):
     ## 创建空数组保存改进的策略
+    next_policy = np.zeros_like(states)
+    
+    for i, state in enumerate(states):
+        if state is end:
+            continue
+
         ## 创建列表存储当前状态下执行不同动作的价值
+        action_values = np.zeros_like(actions)
+        
         ## 遍历所有动作
+        for action in actions:
             ## 返回当前状态-动作下一步的状态、转移概率和奖励
+            probs_states_rewards = \
+                p_state_reward(state, action)
+            
             ## 计算当前状态下执行当前动作的价值
+            for prob, next_state, reward in probs_states_rewards:
+                action_values[action] += \
+                    prob * (reward + gamma * value_table[states.index(next_state)])
+        
         ## 策略提升：选取动作值最大的动作更新策略
+        next_policy[i] = np.argmax(action_values)
     #Fill and submit this code
-    return policy 
+    return next_policy 
 
 
 # 建立策略迭代函数
@@ -242,18 +257,24 @@ def policy_iteration(random_policy, gamma, n):
     policy = random_policy.copy()
     
     ## 进行迭代
-    for _ in range(n):
+    for iter in range(i, n + 1):
         ## 策略评估：得到各状态的价值
         V = compute_value_function(policy, gamma)
-    
+
         ## 策略提升：选取动作值最大的动作更新策略
         new_policy = next_best_policy(V, gamma)
-
+        
         ## 对当前策略进行判断
-        #?
+        if new_policy == policy:    # policy is stable
+            print('[info] early stop.') # TODO: 
+            break
 
         ## 替换为当前最佳策略
         policy = new_policy
+
+        if iter % 100:
+            print('[info] iter {}/{} | {:.2f}'.format(iter, n, iter/n)) # TODO: 
+
     #Fill and submit this code
     return policy
 
@@ -322,7 +343,7 @@ for i in range(num_repeats):
     print(states)
     
     random_policy = 2 * np.ones(len(states))
-    start,end,air_block,diamond_block=find_start_end(grid)
+    start, end, air_block, diamond_block = find_start_end(grid)
     print(start,end)
     
     best_policy = policy_iteration(random_policy, gamma, n)
