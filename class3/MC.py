@@ -156,9 +156,10 @@ def Reward_state_action(s, a):
     #                   2: left, 3: right }
     directions = (-21, 21, -1, 1)
     next_s = s + directions[int(a)]
-    if next_s not in states:
+    if next_s < 0 or next_s >= 441 or \
+       grid[next_s] == u'air':
         next_s = s
-
+    
     return next_s == end, -1, next_s
 
 def epsilon_greedy(qtem, s, epsilon):
@@ -179,7 +180,10 @@ def generate_episode(qtem, epsilon):
     episode = []
 
     # 随机选择初始位置
-    s = np.random.choice(states, size=1)[0]
+    # NOTE: when generated in a subgraph without end state, 
+    #       it lead to a lead loop 
+    # s = np.random.choice(states, size=1)[0]
+    s = start
 
     while True:
         # 基于epsilon-greedy策略选择动作并执行动作
@@ -192,12 +196,13 @@ def generate_episode(qtem, epsilon):
         terminated, reward, next_s = \
             Reward_state_action(s, a)
 
+        # NOTE: end stated will not be added to episode
+        if terminated:
+            break
+
         # 更新实验的轨迹直到得到完整过程（起始位置->终止为止）的序列
         episode.append((s, a, reward))
 
-        if terminated:
-            break
-        
         # update current state 
         s = next_s
 
@@ -210,7 +215,7 @@ def Monte_Carlo(num, epsilon, gamma):
     action_cnt = len(actions)
 
     # 定义状态-动作 函数qfunc (Q[s,a])并初始化
-    qfunc = np.random.normal(state_cnt, action_cnt)
+    qfunc = np.random.normal(size=(state_cnt, action_cnt))
 
     # 定义Nqfunc统计某次episode中（s,a）出现的次数
     Nqfunc = np.zeros_like(qfunc)
@@ -222,9 +227,12 @@ def Monte_Carlo(num, epsilon, gamma):
     # 进行num次循环
     for iter in range(1, num + 1):
         # epsilon decays
-        if iter % (num // 20) == 0:
-            epsilon *= 0.95
+        if iter % decay_interval == 0:
+            epsilon *= decay_rate
             epsilon = max(epsilon, eps_lower_bound)
+            print('[INFO] iter: {}/{} ({:.0f}%) | epsilon: {:.3f}'
+                .format(iter, num, 100. * iter/num, epsilon)) # TODO: 
+            print("[INFO] qtem: {}".format(qtem))
 
         # 采用epsilon-greedy策略进行第K次episode采样实验
         episode = generate_episode(qtem, epsilon)
@@ -258,7 +266,21 @@ def get_shortest_path(qfunc):
     # -------------------------------------
     # 根据最终得到的qfunc输出最优的路径
     # -------------------------------------
-    return np.argmax(qfunc, axis=1)
+    path = [start]
+    qtem = np.argmax(qfunc, axis=1)
+    
+    s = start
+    # FIXME: high dead loop risk here
+    while True:
+        a = qtem[states.index(s)]
+        terminated, _, s = Reward_state_action(s, a)
+
+        path.append(s)
+
+        if terminated:
+            break
+
+    return path
 
 # Create default Malmo objects:
 agent_host = MalmoPython.AgentHost()
@@ -316,19 +338,25 @@ for i in range(num_repeats):
     grid = load_grid(world_state)
     start, end = find_start_end(grid)
     
-    standable_blocks = \
-        set([u'emerald_block', u'diamond_block', u'redstone_block'])
+    legal_blocks = \
+        set([u'emerald_block', u'diamond_block'])
     # 为简化计算可以仅获取迷宫中agent可站立的states
     states = [i for i, block in enumerate(grid) 
-                if block in standable_blocks]   
+                if block in legal_blocks]   
     actions = range(4)  # 定义actions: up, down, left and right
-    num = int(1e4)        #定义采样次数
-    epsilon = 0.3     #定义epsilon
+    num = int(5e2)        #定义采样次数
+    epsilon = 0.4     #定义epsilon
+    
+    decay_interval = num // 20
+    decay_rate = 0.90
     eps_lower_bound = 0.1     # lower bound of epsilon
     gamma = 0.8       #定义gamma
+
+    start_time = time.time()
     q = Monte_Carlo(num, epsilon, gamma)
     path = get_shortest_path(q)
     action_list=extract_action_list_from_path(path)
+    print("[INFO] mission: {} | time elapsed {:.2f} ms.".format(i, time.time() - start_time))
 
     print("Output (start,end)", (i + 1), ":", (start, end))
     print("Output (path length)", (i + 1), ":", len(path))
