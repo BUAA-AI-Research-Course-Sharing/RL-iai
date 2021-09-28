@@ -165,7 +165,8 @@ def epsilon_greedy(qtem, s, epsilon):
     # -------------------------------------
     # epsilon_greedy, 用于采样实现的动作选择
     action_cnt = len(actions)
-    one_hot = np.eye(action_cnt)[qtem[s]]
+    # TODO: low efficiency here
+    one_hot = np.eye(action_cnt)[qtem[states.index(s)]]
     soft_policy = (epsilon / action_cnt) * np.ones(action_cnt) + \
                   (1 - epsilon) * one_hot
     return np.random.choice(actions,
@@ -209,19 +210,25 @@ def Monte_Carlo(num, epsilon, gamma):
     action_cnt = len(actions)
 
     # 定义状态-动作 函数qfunc (Q[s,a])并初始化
+    # FIXME: badly initialize 
     qfunc = np.zeros((state_cnt, action_cnt))
 
     # 定义Nqfunc统计某次episode中（s,a）出现的次数
     Nqfunc = np.zeros_like(qfunc)
 
     # 定义一个实验状态-动作函数qtem用于在采样实验中尽行动作的选择
-    qtem = np.random.randint(high=action_cnt, 
+    qtem = np.random.randint(action_cnt, 
                              size=state_cnt,
                              dtype=int)    
     
     
     # 进行num次循环
-    for _ in range(num):
+    for iter in range(1, num + 1):
+        # epsilon decays
+        if iter % (num // 20) == 0:
+            epsilon *= 0.95
+            epsilon = max(epsilon, eps_lower_bound)
+
         # 采用epsilon-greedy策略进行第K次episode采样实验
         episode = generate_episode(qtem, epsilon)
 
@@ -229,14 +236,16 @@ def Monte_Carlo(num, epsilon, gamma):
         # 定义并初始化回报值 g
         g = 0.0    
         # 反向遍历采样到的序列，进行计算
-        for _, s, a, r in enumerate(episode[::-1]):
+        for s, a, r in episode[::-1]:
+            idx = states.index(s)
+            
             # 计算采样序列的起始状态回报值 g
             g = gamma * g + r
             
-            Nqfunc[s][a] += 1
+            Nqfunc[idx][a] += 1
 
             # 把新的s-a的回报g和旧的qfunc[s,a]的回报，一起重新计算，求得更新后的 qfunc[s,a]                
-            qfunc[s][a] = qfunc[s][a] + (g - qfunc[s][a]) / Nqfunc[s][a] 
+            qfunc[idx][a] = qfunc[idx][a] + (g - qfunc[idx][a]) / Nqfunc[idx][a] 
             # ? 正向遍历采样到的序列当中的每一个状态-动作对，并更新qfunc
             # ? 需要注意每次计算时都需要更新g，以对应下一个状态
 
@@ -313,10 +322,12 @@ for i in range(num_repeats):
     standable_blocks = \
         set([u'emerald_block', u'diamond_block', u'redstone_block'])
     # 为简化计算可以仅获取迷宫中agent可站立的states
-    states = [block for block in grid if block in standable_blocks]   
+    states = [i for i, block in enumerate(grid) 
+                if block in standable_blocks]   
     actions = range(4)  # 定义actions: up, down, left and right
-    num = 10e3        #定义采样次数
-    epsilon = 0.2     #定义epsilon
+    num = int(1e4)        #定义采样次数
+    epsilon = 0.3     #定义epsilon
+    eps_lower_bound = 0.1     # lower bound of epsilon
     gamma = 0.8       #定义gamma
     q = Monte_Carlo(num, epsilon, gamma)
     path = get_shortest_path(q)
