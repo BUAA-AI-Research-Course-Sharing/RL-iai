@@ -270,7 +270,8 @@ def policy_iteration(random_policy, gamma, n):
         policy = new_policy
 
         if iter % 100 == 0:
-            print('[info] iter {}/{} | {:.2f}'.format(iter, n, iter/n)) # TODO: 
+            print('[INFO] iter: {}/{} ({:.0f}%)\tpolicy: {}'
+                    .format(iter, n, 100. * iter/n, policy)) # TODO: 
 
     #Fill and submit this code
     return policy
