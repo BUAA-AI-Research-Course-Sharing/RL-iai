@@ -210,16 +210,13 @@ def Monte_Carlo(num, epsilon, gamma):
     action_cnt = len(actions)
 
     # 定义状态-动作 函数qfunc (Q[s,a])并初始化
-    # FIXME: badly initialize 
-    qfunc = np.zeros((state_cnt, action_cnt))
+    qfunc = np.random.normal(state_cnt, action_cnt)
 
     # 定义Nqfunc统计某次episode中（s,a）出现的次数
     Nqfunc = np.zeros_like(qfunc)
 
     # 定义一个实验状态-动作函数qtem用于在采样实验中尽行动作的选择
-    qtem = np.random.randint(action_cnt, 
-                             size=state_cnt,
-                             dtype=int)    
+    qtem = np.argmax(qfunc, axis=1)
     
     
     # 进行num次循环
