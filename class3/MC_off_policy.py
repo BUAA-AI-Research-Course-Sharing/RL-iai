@@ -261,11 +261,12 @@ def Monte_Carlo(num, epsilon, gamma):
 
             qtem = np.argmax(qfunc, axis=1)
 
-            if a != qtem[idx]:
-                break
+            if iter > off_policy_start_iter:
+                if a != qtem[idx]:
+                    break
 
-            assert(b != 0)
-            w = w / b
+#            assert(b != 0)
+                w = w / b
 
         # update qtem
         # qtem = np.argmax(qfunc, axis=1)
@@ -357,12 +358,13 @@ for i in range(num_repeats):
     states = [i for i, block in enumerate(grid) 
                 if block in legal_blocks]   
     actions = range(4)  # 定义actions: up, down, left and right
-    num = int(5e2)        #定义采样次数
+    num = int(1e3)        #定义采样次数
     epsilon = 0.4     #定义epsilon
     
     decay_interval = num // 20
+    off_policy_start_iter = num // 2
     decay_rate = 0.90
-    eps_lower_bound = 0.1     # lower bound of epsilon
+    eps_lower_bound = 0.05     # lower bound of epsilon
     gamma = 0.8       #定义gamma
 
     start_time = time.time()
