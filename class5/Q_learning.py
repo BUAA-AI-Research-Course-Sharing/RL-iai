@@ -214,8 +214,10 @@ def Q_learning(num, epsilon, alpha, gamma):
             terminated, reward, next_s = \
                 Reward_state_action(s, a)
 
-            qfunc[s][a] += \
-                alpha * (reward + gamma * qfunc[next_s][a] - qfunc[s][a])
+            idx = states.index(s)
+            next_idx = states.index(next_s) 
+            qfunc[idx][a] += \
+                alpha * (reward + gamma * qfunc[next_idx][a] - qfunc[idx][a])
             
             # update current state 
             s = next_s
@@ -308,7 +310,7 @@ for i in range(num_repeats):
     start, end = find_start_end(grid)
     
     legal_blocks = \
-        set([u'emerald_block', u'diamond_block'])
+        set([u'emerald_block', u'diamond_block', u'redstone_block'])
     # 为简化计算可以仅获取迷宫中agent可站立的states
     states = [i for i, block in enumerate(grid) 
                 if block in legal_blocks]   
@@ -317,7 +319,7 @@ for i in range(num_repeats):
     epsilon = 0.4     #定义epsilon
     
     decay_interval = num // 20
-    decay_rate = 0.90
+    decay_rate = 0.95
     eps_lower_bound = 0.1     # lower bound of epsilon
     gamma = 0.8       #定义gamma
     alpha = 1e-1
