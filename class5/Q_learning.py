@@ -174,42 +174,9 @@ def epsilon_greedy(qtem, s, epsilon):
                             p=soft_policy,
                             size=1)[0]
     # -------------------------------------
-
-def generate_episode(qtem, epsilon):
-    
-    episode = []
-
-    # 随机选择初始位置
-    # NOTE: when generated in a subgraph without end state, 
-    #       it lead to a lead loop 
-    # s = np.random.choice(states, size=1)[0]
-    s = start
-
-    while True:
-        # 基于epsilon-greedy策略选择动作并执行动作
-        a = epsilon_greedy(qtem, s, epsilon)
-        
-        # 行动完成后返回：
-        # - 这次行动是否到达终点
-        # - 这次行动获得的奖励
-        # - 这次行动后到达了哪一个状态
-        terminated, reward, next_s = \
-            Reward_state_action(s, a)
-
-        # NOTE: end stated will not be added to episode
-        if terminated:
-            break
-
-        # 更新实验的轨迹直到得到完整过程（起始位置->终止为止）的序列
-        episode.append((s, a, reward))
-
-        # update current state 
-        s = next_s
-
-    return episode
     
 # on policy 基于epsilon-greedy策略进行num次实验，每次实验包含一个完整的episode，再根据episode进行策略改进
-def Monte_Carlo(num, epsilon, gamma):
+def Q_learning(num, epsilon, alpha, gamma):
     # -------------------------------------
     state_cnt = len(states)
     action_cnt = len(actions)
@@ -234,26 +201,28 @@ def Monte_Carlo(num, epsilon, gamma):
                 .format(iter, num, 100. * iter/num, epsilon)) # TODO: 
             print("[INFO] qtem: {}".format(qtem))
 
-        # 采用epsilon-greedy策略进行第K次episode采样实验
-        episode = generate_episode(qtem, epsilon)
+        s = start
 
-        # 针对刚才生成的一幕完整的实验episode，进行策略改进
-        # 定义并初始化回报值 g
-        g = 0.0    
-        # 反向遍历采样到的序列，进行计算
-        for s, a, r in episode[::-1]:
-            idx = states.index(s)
+        while True:
+            # 基于epsilon-greedy策略选择动作并执行动作
+            a = epsilon_greedy(qtem, s, epsilon)
             
-            # 计算采样序列的起始状态回报值 g
-            g = gamma * g + r
+            # 行动完成后返回：
+            # - 这次行动是否到达终点
+            # - 这次行动获得的奖励
+            # - 这次行动后到达了哪一个状态
+            terminated, reward, next_s = \
+                Reward_state_action(s, a)
+
+            qfunc[s][a] += \
+                alpha * (reward + gamma * qfunc[next_s][a] - qfunc[s][a])
             
-            Nqfunc[idx][a] += 1
+            # update current state 
+            s = next_s
 
-            # 把新的s-a的回报g和旧的qfunc[s,a]的回报，一起重新计算，求得更新后的 qfunc[s,a]                
-            qfunc[idx][a] = qfunc[idx][a] + (g - qfunc[idx][a]) / Nqfunc[idx][a] 
-            # ? 正向遍历采样到的序列当中的每一个状态-动作对，并更新qfunc
-            # ? 需要注意每次计算时都需要更新g，以对应下一个状态
-
+            if terminated:
+                break
+  
         # update qtem
         qtem = np.argmax(qfunc, axis=1)
         
@@ -351,9 +320,10 @@ for i in range(num_repeats):
     decay_rate = 0.90
     eps_lower_bound = 0.1     # lower bound of epsilon
     gamma = 0.8       #定义gamma
+    alpha = 1e-1
 
     start_time = time.time()
-    q = Monte_Carlo(num, epsilon, gamma)
+    q = Q_learning(num, epsilon, alpha, gamma)
     path = get_shortest_path(q)
     action_list=extract_action_list_from_path(path)
     print("[INFO] mission: {} | time elapsed {:.2f} ms.".format(i, time.time() - start_time))
