@@ -1,10 +1,3 @@
-'''
-Author: wbs2788
-Date: 2021-11-26 08:07:55
-LastEditTime: 2021-11-26 08:12:37
-LastEditors: wbs2788
-Description: file information
-'''
 import time
 from collections import OrderedDict
 import pickle
