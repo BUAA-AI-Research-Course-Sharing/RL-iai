@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="en">
+ <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+  <title>REINFORCEjs: Gridworld with Dynamic Programming</title>
+  <meta name="description" content="">
+  <meta name="author" content="">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <!-- jquery and jqueryui -->
+  <script src="https://code.jquery.com/jquery-2.1.3.min.js"></script>
+  <link href="external/jquery-ui.min.css" rel="stylesheet">
+  <script src="external/jquery-ui.min.js"></script>
+
+  <!-- bootstrap -->
+  <script src="http://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+  <link href="http://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/css/bootstrap.min.css" rel="stylesheet">
+
+  <!-- d3js -->
+  <script type="text/javascript" src="external/d3.min.js"></script>
+
+  <!-- markdown -->
+  <script type="text/javascript" src="external/marked.js"></script>
+  <script type="text/javascript" src="external/highlight.pack.js"></script>
+  <link rel="stylesheet" href="external/highlight_default.css">
+  <script>hljs.initHighlightingOnLoad();</script>
+
+  <!-- mathjax: nvm now loading dynamically
+  <script type="text/javascript" src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+-->
+
+  <!-- rljs -->
+  <script type="text/javascript" src="lib/class2.js"></script>
+
+  <!-- GA -->
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+  ga('create', 'UA-3698471-24', 'auto');
+  ga('send', 'pageview');
+  </script>
+  
+  <style>
+  #wrap {
+    width:800px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  body {
+    font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+  }
+  #draw {
+    margin-left: 100px;
+  }
+  #exp {
+    margin-top: 20px;
+    font-size: 16px;
+  }
+  svg {
+    cursor: pointer;
+  }
+  h2 {
+    text-align: center;
+    font-size: 30px;
+  }
+  #rewardui {
+    font-weight: bold;
+    font-size: 16px;
+  }
+
+  #gammaui {
+      font-weight: bold;
+      font-size: 16px;
+    }
+  </style>
+  
+  <script type="application/javascript">
+
+    // Gridworld
+    var Gridworld = function(){
+      this.Rarr = null; // reward array
+      this.T = null; // cell types, 0 = normal, 1 = cliff
+      this.reset()
+    }
+    Gridworld.prototype = {
+      reset: function() {
+
+        // hardcoding one gridworld for now
+        this.gh = 5;
+        this.gw = 5;
+        this.gs = this.gh * this.gw; // number of states
+
+        // specify some rewards
+        var Rarr = R.zeros(this.gs);
+        var T = R.zeros(this.gs);
+
+        for (q = 0; q < this.gh * this.gw; q++) { Rarr[q] = -0.5; }
+
+        T[6] = 1
+        T[7] = 1
+        T[8] = 1
+        T[11] = 1
+        T[13] = 1
+        T[16] = 1
+        T[18] = 1
+        Rarr[6] = 0
+        Rarr[7] = 0
+        Rarr[8] = 0
+        Rarr[11] = 0
+        Rarr[13] = 0
+        Rarr[16] = 0
+        Rarr[18] = 0
+
+        Rarr[12] = 1
+        Rarr[14] = -1
+
+        this.Rarr = Rarr;
+        this.T = T;
+      },
+      reward: function(s,a,ns) {
+        // reward of being in s, taking action a, and ending up in ns
+        return this.Rarr[s];
+      },
+      nextStateDistribution: function(s,a) {
+        // given (s,a) return distribution over s' (in sparse form)
+        if(this.T[s] === 1) {
+          // cliff! oh no!
+          // var ns = 0; // reset to state zero (start)
+        } else if(s === 55) {
+          // agent wins! teleport to start
+          var ns = this.startState();
+          while(this.T[ns] === 1) {
+            var ns = this.randomState();
+          }
+        } else {
+          // ordinary space
+          var nx, ny;
+          var x = this.stox(s);
+          var y = this.stoy(s);
+          if(a === 0) {nx=x-1; ny=y;}
+          if(a === 1) {nx=x; ny=y-1;}
+          if(a === 2) {nx=x; ny=y+1;}
+          if(a === 3) {nx=x+1; ny=y;}
+          var ns = nx*this.gh+ny;
+          if(this.T[ns] === 1) {
+            // actually never mind, this is a wall. reset the agent
+            var ns = s;
+          }
+        }
+        // gridworld is deterministic, so return only a single next state
+        return ns;
+      },
+      sampleNextState: function(s,a) {
+        // gridworld is deterministic, so this is easy
+        var ns = this.nextStateDistribution(s,a);
+        var r = this.Rarr[s]; // observe the raw reward of being in s, taking a, and ending up in ns
+        r -= 0.01; // every step takes a bit of negative reward
+        var out = {'ns':ns, 'r':r};
+        if(s === 55 && ns === 0) {
+          // episode is over
+          out.reset_episode = true;
+        }
+        return out;
+      },
+      allowedActions: function(s) {
+        var x = this.stox(s);
+        var y = this.stoy(s);
+        var as = [];
+        if(x > 0) { as.push(0); }
+        if(y > 0) { as.push(1); }
+        if(y < this.gh-1) { as.push(2); }
+        if(x < this.gw-1) { as.push(3); }
+        return as;
+      },
+      randomState: function() { return Math.floor(Math.random()*this.gs); },
+      startState: function() { return 0; },
+      getNumStates: function() { return this.gs; },
+      getMaxNumActions: function() { return 4; },
+
+      // private functions
+      stox: function(s) { return Math.floor(s/this.gh); },
+      stoy: function(s) { return s % this.gh; },
+      xytos: function(x,y) { return x*this.gh + y; },
+    }
+
+    // ------
+    // UI
+    // ------
+    var rs = {};
+    var trs = {};
+    var tvs = {};
+    var pas = {};
+    var cs = 60;  // cell size
+    var initGrid = function() {
+      var d3elt = d3.select('#draw');
+      d3elt.html('');
+      rs = {};
+      trs = {};
+      tvs = {};
+      pas = {};
+
+      var gh= env.gh; // height in cells
+      var gw = env.gw; // width in cells
+      var gs = env.gs; // total number of cells
+
+      var w = 300;
+      var h = 300;
+      svg = d3elt.append('svg').attr('width', w).attr('height', h)
+        .append('g').attr('transform', 'scale(1)');
+
+      // define a marker for drawing arrowheads
+      svg.append("defs").append("marker")
+        .attr("id", "arrowhead")
+        .attr("refX", 3)
+        .attr("refY", 2)
+        .attr("markerWidth", 3)
+        .attr("markerHeight", 4)
+        .attr("orient", "auto")
+        .append("path")
+          .attr("d", "M 0,0 V 4 L3,2 Z");
+
+      for(var y=0;y<gh;y++) {
+        for(var x=0;x<gw;x++) {
+          var xcoord = x*cs;
+          var ycoord = y*cs;
+          var s = env.xytos(x,y);
+
+          var g = svg.append('g');
+          // click callbackfor group
+          g.on('click', function(ss) {
+            return function() { cellClicked(ss); } // close over s
+          }(s));
+
+          // set up cell rectangles
+          var r = g.append('rect')
+            .attr('x', xcoord)
+            .attr('y', ycoord)
+            .attr('height', cs)
+            .attr('width', cs)
+            .attr('fill', '#FFF')
+            .attr('stroke', 'black')
+            .attr('stroke-width', 2);
+          rs[s] = r;
+
+          // reward text
+          var tr = g.append('text')
+            .attr('x', xcoord + 5)
+            .attr('y', ycoord + 55)
+            .attr('font-size', 10)
+            .text('');
+          trs[s] = tr;
+
+          // skip rest for cliffs
+          if(env.T[s] === 1) { continue; }
+
+          // value text
+          var tv = g.append('text')
+            .attr('x', xcoord + 5)
+            .attr('y', ycoord + 20)
+            .text('');
+          tvs[s] = tv;
+        
+          // policy arrows
+          pas[s] = []
+          for(var a=0;a<4;a++) {
+            var pa = g.append('line')
+              .attr('x1', xcoord)
+              .attr('y1', ycoord)
+              .attr('x2', xcoord)
+              .attr('y2', ycoord)
+              .attr('stroke', 'black')
+              .attr('stroke-width', '2')
+              .attr("marker-end", "url(#arrowhead)");
+            pas[s].push(pa);
+          }
+        }
+      }
+
+    }
+
+    var drawGrid = function() {
+      var gh= env.gh; // height in cells
+      var gw = env.gw; // width in cells
+      var gs = env.gs; // total number of cells
+
+      // updates the grid with current state of world/agent
+      for(var y=0;y<gh;y++) {
+        for(var x=0;x<gw;x++) {
+          var xcoord = x*cs;
+          var ycoord = y*cs;
+          var r=255,g=255,b=255;
+          var s = env.xytos(x,y);
+
+          var vv = agent.V[s];
+          var ms = 100;
+          if(vv > 0) { g = 255; r = 255 - vv*ms; b = 255 - vv*ms; }
+          if(vv < 0) { g = 255 + vv*ms; r = 255; b = 255 + vv*ms; }
+          var vcol = 'rgb('+Math.floor(r)+','+Math.floor(g)+','+Math.floor(b)+')';
+          if(env.T[s] === 1) { vcol = "#AAA"; rcol = "#AAA"; }
+
+          // update colors of rectangles based on value
+          var r = rs[s];
+          if(s === selected) {
+            // highlight selected cell
+            r.attr('fill', '#FF0');
+          } else {
+            r.attr('fill', vcol); 
+          }
+
+          // write reward texts
+          var rv = env.Rarr[s];
+          var tr = trs[s];
+          if(rv !== 0) {
+            tr.text('R ' + rv.toFixed(1))
+          }
+
+          // skip rest for cliff
+          if(env.T[s] === 1) continue; 
+
+          // write value
+          var tv = tvs[s];
+          tv.text(agent.V[s].toFixed(2));
+          
+          // update policy arrows
+          var paa = pas[s];
+          for(var a=0;a<4;a++) {
+            var pa = paa[a];
+            var prob = agent.P[a*gs+s];
+            if(prob === 0) { pa.attr('visibility', 'hidden'); }
+            else { pa.attr('visibility', 'visible'); }
+            var ss = cs/2 * prob * 0.9;
+            if(a === 0) {nx=-ss; ny=0;}
+            if(a === 1) {nx=0; ny=-ss;}
+            if(a === 2) {nx=0; ny=ss;}
+            if(a === 3) {nx=ss; ny=0;}
+            pa.attr('x1', xcoord+cs/2)
+              .attr('y1', ycoord+cs/2)
+              .attr('x2', xcoord+cs/2+nx)
+              .attr('y2', ycoord+cs/2+ny);
+          }
+        }
+      }
+    }
+
+    var selected = -1;
+    var cellClicked = function(s) {
+      if(s === selected) {
+        selected = -1; // toggle off
+        $("#creward").html('(select a cell)');
+      } else {
+        selected = s;
+        $("#creward").html(env.Rarr[s].toFixed(2));
+        $("#rewardslider").slider('value', env.Rarr[s]);
+      }
+      drawGrid(); // redraw
+    }
+
+    var updatePolicy = function() {
+      agent.updatePolicy();
+      drawGrid();
+    }
+
+    var evaluatePolicy = function() {
+      agent.evaluatePolicy();
+      drawGrid();
+    }
+
+    var sid = -1;
+    var runValueIteration = function() {
+      if(sid === -1) {
+        sid = setInterval(function(){
+          agent.evaluatePolicy();
+          agent.updatePolicy();
+          drawGrid();
+        }, 100);
+      } else { 
+        clearInterval(sid); 
+        sid = -1;
+      }
+    }
+
+    function resetAll() {
+      env.reset();
+      agent.reset();
+      drawGrid();
+    }
+
+    var agent, env;
+    function start() {
+      env = new Gridworld(); // create environment
+      agent = new RL.DPAgent(env, { 'gamma': 1.0 }); // create an agent, yay!
+      initGrid();
+      drawGrid();
+      $("#rewardslider").slider({
+        min: -5,
+        max: 5.1,
+        value: 0,
+        step: 0.1,
+        slide: function (event, ui) {
+          if (selected >= 0) {
+            env.Rarr[selected] = ui.value;
+            $("#creward").html(ui.value.toFixed(2));
+            drawGrid();
+          } else {
+            $("#creward").html('(select a cell)');
+          }
+        }
+      });
+
+      $("#gammaslider").slider({
+        min: 0,
+        max: 1.01,
+        value: 1.0,
+        step: 0.1,
+        slide: function (event, ui) {
+          agent.gamma = ui.value;
+          $("#gammaselect").html(ui.value.toFixed(2));
+        }
+      });
+
+
+      // suntax highlighting
+      //marked.setOptions({highlight:function(code){ return hljs.highlightAuto(code).value; }});
+      $(".md").each(function(){
+        $(this).html(marked($(this).html()));
+      });
+      renderJax();
+    }
+
+    var jaxrendered = false;
+    function renderJax() {
+      if(jaxrendered) { return; }
+      (function () {
+        var script = document.createElement("script");
+        script.type = "text/javascript";
+        script.src  = "http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+        document.getElementsByTagName("head")[0].appendChild(script);
+        jaxrendered = true;
+      })();
+    }
+  </script>
+
+ </head>
+ <body onload="start();">
+
+  <img style="position: absolute; top: 0; right: 0; border: 0;" src="img/beihang.png" alt="BeiHang">
+  
+  <!-- content -->
+
+   <div id="wrap">
+
+     <div id="mynav" style="border-bottom:1px solid #999; padding-bottom: 10px; margin-bottom:50px;">
+      <div>
+        <img src="loop.svg" style="width:50px;height:50px;float:left;">
+        <h1 style="font-size:50px;">REINFORCE<span style="color:#058;">js</span></h1>
+      </div>
+      <ul class="nav nav-pills">
+        <li role="presentation" class="active"><a href="class2_plus.html">GridWorld: DP-Plus</a></li>
+        <li role="presentation" class="active"><a href="class2.html">GridWorld: DP</a></li>
+      </ul> 
+    </div>
+
+   <h2>GridWorld: Dynamic Programming Demo</h2>
+   
+   <div style="text-align:center;">
+     <button class="btn btn-warning" onclick="evaluatePolicy()" style="width:220px;height:50px;margin-bottom:5px;">Policy Evaluation (one sweep)</button>
+     <button class="btn btn-warning" onclick="updatePolicy()" style="width:170px;height:50px;margin-bottom:5px;">Policy Update</button>
+     <button class="btn btn-success" onclick="runValueIteration()" style="width:170px;height:50px;margin-bottom:5px;">Toggle Value Iteration</button>
+     <button class="btn btn-danger" onclick="resetAll()" style="width:170px;height:50px;margin-bottom:5px;">Reset</button>
+  </div>
+
+   <br>
+
+   <div id="draw"></div>
+   <br>
+   <div id="rewardui">Cell reward: <span id="creward">(select a cell)</span>
+     <div id="rewardslider"></div>
+   </div>
+   <div id="gammaui">gamma: <span id="gammaselect">(select a gamma)</span>
+     <div id="gammaslider"></div>
+   </div>
+   <hr>
+
+   <div id="exp" class="md">
+   </div>
+   </div>
+
+   <br><br><br><br><br>
+ </body>
+
+
+</html>
